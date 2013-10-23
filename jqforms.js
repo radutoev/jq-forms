@@ -113,6 +113,11 @@ function JqQuestion(type, mode, title, data){
                     console.error('unable to determine preview type');
                 }
             });
+        } else if(this.mode == 'wr'){
+        	var titleTpl = '<span>'+((this.title !== undefined) ? this.title : 'Question Title') +'</span>';
+            var typeTpl = leThis.generateView(leThis.type);        
+            var tpl = titleTpl + ((typeTpl instanceof jQuery) ? typeTpl.html() : typeTpl);
+            qContent = $(tpl);
         }
         
         wrapper.append(ctrlGrp.append(deleteBtn, editBtn), qContainer.append(qContent));
@@ -120,6 +125,36 @@ function JqQuestion(type, mode, title, data){
         this.question.append(wrapper);
     }
     
+    this.generateView = function(type){
+    	var preview = undefined;
+    	switch(type){
+    		case "text":
+    			preview = '<input type="text" class="form-control">';
+    			break;
+    		case "paragraph":
+    			preview = '<textarea class="form-control"></textarea>';
+    			break;
+    		case "choices":
+    		case "checkboxes":
+    			preview = $('<div class="form-group"><div>');
+                var colGrp = $('<div class="col-lg-offset-2 col-lg-4"></div>');
+                var list = $('<ul class="nav nav-list options-container"></ul>');
+
+                var htmlItems = '';
+                leThis.data = ['Option1', 'Option2'];
+                if(leThis.data !== undefined && leThis.data.length > 0){
+                	for(var i = 0 ; i < leThis.data.length ; ++i){
+                        htmlItems += leThis.makeItem(leThis.data[i]);
+                    }
+                }
+
+                preview.append(colGrp.append(list.append(htmlItems)));
+    		default:
+    			break;
+    	}
+    	return preview;
+    }
+
     this.generatePreview = function(type){
         leThis.type = type;
         var preview;
@@ -201,16 +236,31 @@ function JqQuestion(type, mode, title, data){
         if(leThis.mode == 'edit'){
             tpl += '<div class="drag-marker glyphicon glyphicon-move"></div>';
         }
+
         if(leThis.type == 'choices'){
-           tpl += '<div class="radio"><label><input type="radio" disabled/>';
+           tpl += '<div class="radio"><label><input type="radio" name="listOption" ';
+           if(!(leThis.mode == 'wr')) tpl += ' disabled';
+           tpl += '/>';
         } else if(leThis.type == 'checkboxes'){
-           tpl += '<div class="checkbox"><label><input type="checkbox" disabled/>'; 
+           tpl += '<div class="checkbox"><label><input type="checkbox"';
+           if(!(leThis.mode == 'wr')) tpl += ' disabled';
+           tpl += '/>'; 
         }
-        tpl += '<input type="text" value="'+name+'" ';
-        if(leThis.mode != 'edit'){
-            tpl += 'disabled';
+
+        if(this.mode == 'wr'){
+            tpl += name;
+        } else {
+            tpl += '<input type="text" value="'+name+'" ';
+            if(leThis.mode == 'rd'){
+                tpl += 'disabled';
+            }
+            tpl += ' />';
+            if(leThis.mode == 'edit'){
+                tpl += '<button type="button" class="close add-item" aria-hidden="true">+</button>';
+            }    
         }
-        tpl += ' /><button type="button" class="close add-item" aria-hidden="true">+</button></label></div></div></li>'
+        
+        tpl += '</label></div></div></li>';
         return tpl;
     }
     
@@ -270,7 +320,12 @@ JqQuestion.prototype.getTemplate = function(){
     
     var generateView = function(root){
         //TODO populate _questionsContainer if I have any questions specified as dataProvider.
-        _htmlform.append(_htmlTitle, _questionsContainer, _htmlAdd);
+        // _htmlform.append(defaults.methods.generateTitle(), _questionsContainer, _htmlAdd);
+        if(defaults.mode == 'wr'){
+            _htmlform.append(defaults.methods.generateTitle(), defaults.questionsContainer);
+        } else {
+            _htmlform.append(defaults.methods.generateTitle(), defaults.questionsContainer, _htmlAdd);
+        }
         _jqForm.append(_htmlform);
         root.append(_jqForm);
     };
@@ -286,12 +341,54 @@ JqQuestion.prototype.getTemplate = function(){
             //this refers to the clicked a.
             $(this).trigger("jq-add", this.type);
         });
-    }
+    };
+
+    var defaults = {
+        data : undefined,
+        mode : 'rd',
+        questionsContainer : $('<ul class="nav nav-list sortable-list"></ul>'),
+        methods : {
+            generateTitle : function(){
+                var title = '<div class="form-group jq-container jq-title-container">' +   
+                            '<div class="col-lg-11 jq-title">';
+                if(defaults.data != undefined){
+                    title += '<h3>' + defaults.data.title + '</h3>';//must not be null
+                    if(defaults.data.description != undefined){
+                        title += '<h4>' + defaults.data.description + '</h4>';
+                    } else {
+                        title += '<textarea class="form-control jq-form-desc" placeholder="Description..."></textarea>';    
+                    }
+                } else {
+                    title += '<input class="form-control" type="text" placeholder="Title...">';
+                    title += '<textarea class="form-control jq-form-desc" placeholder="Description..."></textarea>';
+                }
+                title += '</div></div>'; 
+                return title;
+            },
+            generateQuestions : function(){
+                if(defaults.data !== undefined && defaults.data.questions !== undefined){
+                    var questions = defaults.data.questions;
+                    for(var i = 0 ; i < questions.length ; ++i){
+                        var q = questions[i];
+                        defaults.questionsContainer.append(new JqQuestion(q.type, defaults.mode, q.title, q.options).getTemplate());
+                    }
+                }
+            }
+        }
+    };
     
-    $.fn.jqforms = function(){
+    $.fn.jqforms = function(options){
         var leThis= this;
+        var settings = $.extend(defaults, options);
+
+        console.log(defaults.data);
+        if(defaults.data !== undefined){
+            defaults.methods.generateQuestions();
+        }
+
         generateView(this);
         addMagic(this);
+
         this.on("jq-add", function(event, qType){
             var tpl = undefined;
             switch(qType){
@@ -309,19 +406,38 @@ JqQuestion.prototype.getTemplate = function(){
                 default: break;
             }
             if(tpl !== undefined){
-                _questionsContainer.append(tpl);       
+                defaults.questionsContainer.append(tpl);       
             }
         });
+
         return this;
-    }
+    };
 }(jQuery));
 
 $(document).ready(function(){
-//    $("ul.sortable-list").sortable({
-//            placeholder : 'drag-placeholder',
-//            handle : '.drag-marker',
-//            opacity : 0.6
-//        });
-    
-    $("#myForm").jqforms();
+    var provider = {
+        id : 1, 
+        title : "My Form",
+        description : "My very first form",
+        questions : [{
+            id : 1,
+            title : 'Is this the first question?',
+            type : 'text'
+        },{
+            id : 2,
+            title : 'Is this a detailed question?',
+            type : 'paragraph'
+        },{
+            id : 3,
+            title : 'Only one is allowed, which one should it be?',
+            type : 'choices',
+            options : ["Windows", "Linux", "Mac"]
+        },{
+            id : 4,
+            title : 'Choose as many as you like',
+            type : 'checkboxes',
+            options : ["Le option", "Der Option", "Za Option"]
+        }]
+    };
+    $("#myForm").jqforms({mode : 'wr', data : provider});
 });
